@@ -1,73 +1,168 @@
-# E-Commerce Orders Data Engineering Project
+# E-Commerce Data Engineering Platform on AWS
 
-<img width="1536" height="813" alt="ChatGPT Image Sep 22, 2026, 05_16_40 PM" src="https://github.com/user-attachments/assets/22579c1e-c941-4849-a042-464704e3bf9f" />
+<img width="1536" height="1024" alt="AWS_architecture" src="https://github.com/user-attachments/assets/a7056785-058f-46f0-8a3c-51d6056ab5e7" />
 
 
-## Overview
+## Project Overview
 
-An end-to-end E-Commerce Data Engineering pipeline on AWS.
+This project is an end-to-end **E-Commerce Data Engineering platform**
+built on AWS.
 
-The project extracts order data from a Python REST API, stores raw JSON
-in Amazon S3, processes and transforms the data using PySpark in an AWS
-Glue Spark Notebook, builds a dimensional/star-schema model, stores the
-final datasets as Parquet in S3, catalogs them using an AWS Glue
-Crawler, and performs analytical SQL queries using Amazon Athena.
+The project has two connected parts:
 
-**Project endpoint:** SQL analytics. No BI dashboard was implemented.
+1.  **Historical Data Warehouse Pipeline**\
+    Loads the existing e-commerce CSV datasets into Amazon S3, processes
+    and models them with AWS Glue and PySpark, stores the curated
+    warehouse data as Parquet, catalogs it with AWS Glue, and analyzes
+    it with Amazon Athena.
 
-## Architecture
+2.  **API Incremental Ingestion Extension**\
+    Extends the historical platform with a Python Orders API and AWS
+    Lambda. New orders are fetched incrementally from the API, stored as
+    individual JSON objects in S3, and then processed with PySpark into
+    the same analytical data model.
+
+The final platform therefore combines **historical data** with an
+**incremental API-based ingestion path**.
+
+The project was completed through the **SQL analytics stage using Amazon
+Athena**. No BI dashboard was implemented.
+
+------------------------------------------------------------------------
+
+# 1. High-Level Architecture
+
+The complete project can be understood as two pipelines that converge on
+the same analytical data platform.
 
 ``` text
-Python REST API
-       |
-       v
-   orders_json
-       |
-       v
- Amazon S3 - Raw
-       |
-       v
- AWS Glue / PySpark
-       |
-       +-------------------+
-       |                   |
-       v                   v
- Dimensions              Facts
-       |                   |
-       +---------+---------+
-                 |
-                 v
-            S3 Parquet
-                 |
-                 v
-         AWS Glue Crawler
-                 |
-                 v
-        Glue Data Catalog
-                 |
-                 v
-          Amazon Athena
-                 |
-                 v
-           SQL Analytics
+                         HISTORICAL PIPELINE
+
+  Historical CSV Files
+          |
+          v
+     Amazon S3
+     Raw Layer
+          |
+          v
+  AWS Glue + PySpark
+          |
+          v
+     Data Cleaning
+     Transformations
+     Star Schema
+          |
+          v
+     Amazon S3
+   Processed Parquet
+          |
+          |
+          +-----------------------------+
+                                        |
+                                        v
+                                  AWS Glue Crawler
+                                        |
+                                        v
+                                Glue Data Catalog
+                                        |
+                                        v
+                                  Amazon Athena
+                                        |
+                                        v
+                                   SQL Analytics
+
+
+                         INCREMENTAL API EXTENSION
+
+       Python Orders API
+               |
+               v
+          AWS Lambda
+               |
+               v
+       API Raw JSON in S3
+               |
+               v
+        PySpark / Glue
+               |
+               v
+      Incremental Processing
+               |
+               v
+      Same Curated Data Model
+               |
+               v
+          S3 Parquet
+               |
+               v
+       Glue Catalog / Athena
 ```
 
-## Technologies
+The two architectures are complementary:
 
-  Technology              Purpose
-  ----------------------- ---------------------------------------------------
-  Python / Requests       REST API extraction
-  Amazon S3               Raw and processed data storage
-  PySpark                 Validation, cleaning, transformation and modeling
-  AWS Glue                Spark processing environment and Data Catalog
-  AWS Glue Crawler        Schema discovery and cataloging
-  Apache Parquet          Columnar processed-data format
-  Amazon Athena           Serverless SQL analytics over S3
-  SQL                     Validation, aggregations and advanced analytics
-  IAM                     AWS access control
-  CloudWatch / AWS logs   Monitoring and troubleshooting
+``` text
+Historical CSV Data
+        \
+         \
+          +----> S3 / PySpark / Star Schema / Athena
+         /
+        /
+API Orders -> Lambda -> S3 -> PySpark
+```
 
-## S3 Structure
+------------------------------------------------------------------------
+
+# 2. Technologies
+
+  Technology              Role
+  ----------------------- --------------------------------------------------------
+  Python                  API interaction and data extraction
+  REST API                Source of incoming orders
+  AWS Lambda              Incremental API ingestion and S3 delivery
+  Amazon S3               Raw and curated data lake storage
+  PySpark                 Data processing, cleaning, transformation and modeling
+  AWS Glue                Managed Spark processing environment
+  Apache Parquet          Curated analytical storage format
+  AWS Glue Crawler        Schema discovery
+  AWS Glue Data Catalog   Metadata/catalog layer
+  Amazon Athena           Serverless SQL analytics
+  IAM                     AWS permissions and access control
+  SQL                     Validation, aggregation and advanced analytics
+
+------------------------------------------------------------------------
+
+# 3. Historical Data Pipeline
+
+The first architecture handles the existing historical e-commerce
+datasets.
+
+## 3.1 Data Sources
+
+The historical source consists of 12 CSV datasets:
+
+``` text
+customers.csv
+categories.csv
+products.csv
+departments.csv
+employees.csv
+suppliers.csv
+orders.csv
+order_details.csv
+payments.csv
+product_suppliers.csv
+shippers.csv
+shipments.csv
+```
+
+These datasets represent the historical relational data of the
+e-commerce system.
+
+------------------------------------------------------------------------
+
+# 4. Historical Raw Layer
+
+The historical files are stored in Amazon S3.
 
 Bucket:
 
@@ -75,149 +170,130 @@ Bucket:
 s3://aws-ecommerce-s3/
 ```
 
-Main structure:
+Historical raw area:
 
 ``` text
-ecommerce/
+s3://aws-ecommerce-s3/ecommerce/raw/
+```
+
+Conceptually:
+
+``` text
+aws-ecommerce-s3
 |
-+-- raw/
-|   +-- orders_json/
-|       +-- order_50001.json
-|       +-- order_50002.json
-|       +-- ...
-|
-+-- api_raw/
-|   +-- orders/
-|
-+-- processed/
-    +-- ecommerce_dwh/
-        +-- dim_customer/
-        +-- dim_product/
-        +-- dim_category/
-        +-- dim_department/
-        +-- dim_supplier/
-        +-- dim_employee/
-        +-- dim_shipper/
-        +-- dim_date/
-        +-- dim_payment_method/
-        +-- dim_order_status/
-        +-- fact_order/
-        +-- fact_order_detail/
-        +-- fact_payment/
-        +-- fact_shipment/
-        +-- fact_customer_sales/
-        +-- fact_product_sales/
++-- ecommerce/
+    |
+    +-- raw/
+        |
+        +-- customers/
+        +-- categories/
+        +-- products/
+        +-- departments/
+        +-- employees/
+        +-- suppliers/
+        +-- orders/
+        +-- order_details/
+        +-- payments/
+        +-- product_suppliers/
+        +-- shippers/
+        +-- shipments/
 ```
 
-Final warehouse layer:
+The raw layer preserves the source data before transformation.
+
+------------------------------------------------------------------------
+
+# 5. Historical Processing with AWS Glue and PySpark
+
+The historical data is processed using **PySpark in an AWS Glue Spark
+Notebook**.
+
+The processing workflow includes:
 
 ``` text
-s3://aws-ecommerce-s3/ecommerce/processed/ecommerce_dwh/
+Raw CSV Data
+     |
+     v
+Data Ingestion
+     |
+     v
+Data Profiling
+     |
+     v
+Data Validation
+     |
+     v
+Data Cleaning
+     |
+     v
+Data Type Transformation
+     |
+     v
+Business Transformations
+     |
+     v
+Joins
+     |
+     v
+Aggregations
+     |
+     v
+Dimensional Modeling
+     |
+     v
+Parquet Output
 ```
 
-## Source Data
+The project included checks for:
 
-Historical source tables:
-
-``` text
-customers
-categories
-products
-departments
-employees
-suppliers
-orders
-order_details
-payments
-product_suppliers
-shippers
-shipments
-orders_json
-```
-
-The API order structure contains:
-
-``` text
-metadata
-order
-order_details
-payment
-shipment
-summary
-```
-
-The JSON objects were read directly by Spark from the S3 prefix. The
-project did not manually concatenate the 1000+ JSON files.
-
-## Data Quality and Exploration
-
-The initial PySpark analysis included:
-
--   Schema inspection
--   Sample records
--   Row and column counts
+-   Schemas
+-   Row counts
+-   Column counts
 -   Business keys
 -   Foreign-key relationships
--   Nullable columns
--   Duplicate detection
+-   Nullable fields
+-   Duplicate records
 -   Invalid values
 -   Invalid dates
 -   Invalid numeric values
--   Orphan-record checks
--   Email validation
--   Payment and shipment consistency checks
+-   Orphan records
+-   Data consistency
 
-Examples of business keys:
+------------------------------------------------------------------------
 
-``` text
-customers       -> CustomerID
-categories      -> CategoryID
-products        -> ProductID
-departments     -> DepartmentID
-employees       -> EmployeeID
-suppliers       -> SupplierID
-orders          -> OrderID
-order_details   -> OrderDetailID
-payments        -> PaymentID
-shippers        -> ShipperID
-shipments       -> ShipmentID
-```
+# 6. Data Cleaning
 
-`product_suppliers` uses the composite business key:
+The historical datasets were standardized before modeling.
 
-``` text
-ProductID + SupplierID
-```
-
-## Data Cleaning
-
-PySpark transformations included:
+Main operations included:
 
 -   Converting column names to `snake_case`
--   Trimming strings
+-   Trimming string values
 -   Converting empty strings to NULL
--   Normalizing emails
 -   Standardizing status values
--   Converting data types
--   Handling invalid emails
+-   Normalizing email values
+-   Converting columns to appropriate data types
 -   Handling missing values
 -   Removing duplicates
--   Validating dates and numeric values
+-   Validating dates
+-   Validating numerical values
 -   Validating business keys
--   Handling invalid shipment dates
+-   Validating shipment dates
 
-The cleaned datasets were written as Parquet.
+The cleaned datasets were written in Parquet format.
 
-## Star Schema
+------------------------------------------------------------------------
 
-The final model contains:
+# 7. Star Schema Data Warehouse
+
+The processed data was modeled as a **star schema** consisting of:
 
 ``` text
 10 Dimension Tables
 6 Fact Tables
 ```
 
-### Dimensions
+## 7.1 Dimensions
 
 ``` text
 dim_customer
@@ -232,9 +308,11 @@ dim_payment_method
 dim_order_status
 ```
 
-Surrogate keys were generated for the dimensions.
+The dimensions use surrogate keys in addition to their business keys.
 
-### Facts
+------------------------------------------------------------------------
+
+## 7.2 Facts
 
 ``` text
 fact_order
@@ -245,116 +323,378 @@ fact_customer_sales
 fact_product_sales
 ```
 
-### Fact Grains
+### Fact grains
 
 ``` text
 fact_order
-    -> one row per order
+    -> One row per order
 
 fact_order_detail
-    -> one row per order-detail/product line
+    -> One row per order-detail/product line
 
 fact_payment
-    -> one row per payment transaction
+    -> One row per payment transaction
 
 fact_shipment
-    -> one row per shipment
+    -> One row per shipment
 
 fact_customer_sales
-    -> one customer per day
+    -> One customer per day
 
 fact_product_sales
-    -> one product per day
+    -> One product per day
 ```
 
-## API Integration
+This provides both detailed transactional facts and aggregated
+analytical facts.
 
-The nested API JSON was parsed with an explicit PySpark schema.
+------------------------------------------------------------------------
 
-The API data was transformed into relational-style datasets:
+# 8. Curated S3 Data Warehouse Layer
+
+The final warehouse datasets are stored as Parquet in:
 
 ``` text
-api_orders
-api_order_details
-api_payments
-api_shipments
+s3://aws-ecommerce-s3/ecommerce/processed/ecommerce_dwh/
 ```
 
-The `order_details` array was handled using Spark transformations and
-`explode`, rather than manually rebuilding JSON files.
-
-## PySpark Processing Flow
+Structure:
 
 ``` text
-Read
-  |
+ecommerce_dwh/
+|
++-- dim_customer/
++-- dim_product/
++-- dim_category/
++-- dim_department/
++-- dim_supplier/
++-- dim_employee/
++-- dim_shipper/
++-- dim_date/
++-- dim_payment_method/
++-- dim_order_status/
+|
++-- fact_order/
++-- fact_order_detail/
++-- fact_payment/
++-- fact_shipment/
++-- fact_customer_sales/
++-- fact_product_sales/
+```
+
+Parquet was selected for the curated layer because it provides columnar
+storage and is well suited for analytical workloads.
+
+------------------------------------------------------------------------
+
+# 9. API Incremental Ingestion Extension
+
+The second architecture extends the historical platform with an
+API-driven ingestion path.
+
+Instead of relying only on historical CSV files, new orders can arrive
+from a Python Orders REST API.
+
+The extension is:
+
+``` text
+Python Orders API
+        |
+        v
+     AWS Lambda
+        |
+        v
+   Amazon S3
+   API Raw Layer
+        |
+        v
+  PySpark / Glue
+        |
+        v
+Incremental Processing
+        |
+        v
+Curated Data Model
+```
+
+This allows the platform to process new incoming orders without
+rebuilding the entire historical source.
+
+------------------------------------------------------------------------
+
+# 10. Python Orders API
+
+The API exposes an endpoint similar to:
+
+``` text
+GET /api/orders?from_order_id=...&limit=...
+```
+
+The API returns order objects containing nested information such as:
+
+``` text
+metadata
+order
+order_details
+payment
+shipment
+summary
+```
+
+Example conceptual structure:
+
+``` json
+{
+  "metadata": {
+    "event_id": "...",
+    "event_type": "ORDER_CREATED",
+    "event_timestamp": "...",
+    "source": "ordering_api"
+  },
+  "order": {
+    "OrderID": 50974,
+    "CustomerID": 7508,
+    "OrderDate": "2026-09-21",
+    "Status": "Confirmed"
+  },
+  "order_details": [],
+  "payment": {},
+  "shipment": {}
+}
+```
+
+------------------------------------------------------------------------
+
+# 11. AWS Lambda Ingestion
+
+AWS Lambda is used as the API ingestion component.
+
+Its responsibilities include:
+
+1.  Reading the current API ingestion position.
+2.  Calling the Orders API.
+3.  Retrieving new orders.
+4.  Writing each order as an individual JSON object to S3.
+5.  Updating the ingestion checkpoint.
+
+The resulting objects follow a pattern such as:
+
+``` text
+order_50001.json
+order_50002.json
+order_50003.json
+...
+order_51000.json
+```
+
+This keeps incoming API records independently stored in the raw layer.
+
+------------------------------------------------------------------------
+
+# 12. API Raw S3 Layer
+
+API data is stored separately from the historical CSV raw layer.
+
+Example:
+
+``` text
+s3://aws-ecommerce-s3/ecommerce/api_raw/orders/
+```
+
+Conceptually:
+
+``` text
+api_raw/
+|
++-- orders/
+    |
+    +-- order_50001.json
+    +-- order_50002.json
+    +-- order_50003.json
+    +-- ...
+```
+
+The raw JSON files are retained before Spark transformation.
+
+This provides a durable source for:
+
+-   Reprocessing
+-   Auditing
+-   Debugging
+-   Incremental transformations
+-   Data lineage
+
+------------------------------------------------------------------------
+
+# 13. API Processing with PySpark
+
+The API JSON data is processed using PySpark.
+
+The JSON contains nested structures, so the processing pipeline:
+
+``` text
+JSON
+ |
+ v
+Explicit Schema
+ |
+ v
+Parse Metadata
+ |
+ v
+Parse Order
+ |
+ v
+Parse Order Details
+ |
+ v
+Parse Payment
+ |
+ v
+Parse Shipment
+ |
+ v
 Validate
-  |
-Clean
-  |
-Standardize
-  |
-Transform
-  |
-Generate Surrogate Keys
-  |
-Build Dimensions
-  |
-Build Facts
-  |
-Write Parquet
+ |
+ v
+Deduplicate
+ |
+ v
+Identify New Orders
+ |
+ v
+Transform to Relational Structures
 ```
 
-Processing was performed in an AWS Glue Spark Notebook.
+The nested order details are flattened using Spark transformations.
 
-## Parquet Data Warehouse Layer
+The API data is transformed into structures corresponding to the
+historical warehouse model:
 
-The final dimensional model is stored at:
+``` text
+API Orders
+      |
+      +--> Orders
+      |
+      +--> Order Details
+      |
+      +--> Payments
+      |
+      +--> Shipments
+```
+
+------------------------------------------------------------------------
+
+# 14. Integration with the Historical Model
+
+One of the main goals of the API extension is to make incoming API data
+compatible with the existing warehouse model.
+
+Conceptually:
+
+``` text
+Historical CSV Data
+        |
+        v
+Historical Processing
+        |
+        +------------------+
+                           |
+                           v
+                    Star Schema
+                           ^
+                           |
+        +------------------+
+        |
+API JSON -> Lambda -> S3 -> PySpark
+```
+
+Both historical and incoming data therefore feed the same analytical
+model.
+
+This creates a unified platform rather than maintaining two independent
+analytical systems.
+
+------------------------------------------------------------------------
+
+# 15. API Incremental Processing
+
+The API extension uses an incremental approach.
+
+Instead of processing every order from the beginning each time:
+
+``` text
+All Orders
+    |
+    v
+Process Everything
+```
+
+the intended workflow is:
+
+``` text
+Last Processed Position
+        |
+        v
+Request New Orders
+        |
+        v
+Store New JSON Objects
+        |
+        v
+Process New Records
+        |
+        v
+Update Curated Data
+```
+
+This reduces unnecessary processing as the API dataset grows.
+
+------------------------------------------------------------------------
+
+# 16. Glue Data Catalog
+
+After the curated Parquet datasets are produced, an AWS Glue Crawler
+scans:
 
 ``` text
 s3://aws-ecommerce-s3/ecommerce/processed/ecommerce_dwh/
 ```
 
-Parquet provides:
+The crawler discovers:
 
--   Columnar storage
--   Compression
--   Efficient analytical reads
--   Schema preservation
--   Efficient querying from Athena
+-   Table structures
+-   Columns
+-   Data types
+-   Parquet schemas
+-   S3 locations
 
-## AWS Glue Crawler
+The metadata is stored in the AWS Glue Data Catalog.
 
-The Glue Crawler points to:
-
-``` text
-s3://aws-ecommerce-s3/ecommerce/processed/ecommerce_dwh/
-```
-
-It discovers the Parquet schemas and creates metadata in the AWS Glue
-Data Catalog.
-
-Athena database:
+The Athena database is:
 
 ``` text
 ecommerce_wh
 ```
 
-The catalog contains 16 warehouse tables:
+------------------------------------------------------------------------
 
-``` text
-10 dimensions
-6 facts
-```
+# 17. Amazon Athena
 
-## Amazon Athena
+Amazon Athena is the final analytical query engine.
 
-Amazon Athena is the final SQL analytics layer.
-
-It queries the Parquet data directly from S3 through the Glue Data
+Athena queries the Parquet datasets directly in S3 through the Glue Data
 Catalog.
 
-Example table names:
+The database contains:
+
+``` text
+10 Dimensions
+6 Facts
+16 Tables Total
+```
+
+Examples:
 
 ``` text
 ecommerce_wh.dim_customer
@@ -376,18 +716,48 @@ ecommerce_wh.fact_customer_sales
 ecommerce_wh.fact_product_sales
 ```
 
-## Data Validation
+------------------------------------------------------------------------
 
-Athena validation queries checked:
+# 18. Data Validation
 
-1.  Row counts across all 16 tables
-2.  Duplicate business/grain keys
-3.  Fact-to-dimension orphan relationships
-4.  NULL surrogate and foreign keys
-5.  Fact-to-dimension match percentages
-6.  Sales reconciliation between detailed and aggregate facts
+The final warehouse was validated using Athena SQL.
 
-Sales reconciliation compared:
+Validation included:
+
+### Row Counts
+
+Checking all 16 dimension and fact tables.
+
+### Duplicate Detection
+
+Checking:
+
+-   Dimension business keys
+-   Fact primary/grain keys
+-   Composite fact grains
+
+### Foreign-Key Validation
+
+Checking fact-to-dimension relationships.
+
+### Null Key Validation
+
+Checking required surrogate and foreign keys.
+
+### Relationship Validation
+
+Calculating:
+
+``` text
+Total Rows
+Matched Rows
+Orphan Rows
+Match Percentage
+```
+
+### Sales Reconciliation
+
+Sales were reconciled across:
 
 ``` text
 fact_order_detail
@@ -395,11 +765,16 @@ fact_customer_sales
 fact_product_sales
 ```
 
-## Analytics
+This verifies consistency between detailed and aggregated
+representations.
 
-### Overall KPIs
+------------------------------------------------------------------------
 
-Calculated:
+# 19. Business Analytics
+
+The project reached the SQL analytics stage using Athena.
+
+## Overall KPIs
 
 ``` text
 Total Sales
@@ -410,50 +785,46 @@ Total Quantity Sold
 Total Profit
 ```
 
-### Monthly Analytics
-
-Calculated:
+## Monthly Analytics
 
 ``` text
-Sales
-Orders
-Quantity
-Profit
+Monthly Sales
+Monthly Orders
+Monthly Quantity
+Monthly Profit
 ```
 
-### Sales Analysis
-
-Sales were analyzed by:
+## Sales Analysis
 
 ``` text
-Category
-Product
-Customer
+Sales by Category
+Sales by Product
+Sales by Customer
 ```
 
-A department-sales metric was not calculated because the available
-source model does not provide a valid direct relationship between
+A department-sales calculation was not created because the actual
+source/model does not contain a valid direct relationship between
 sales/products and departments.
 
-### Top Products
-
-Top 10 products by sales.
-
-### Top Customers
-
-Top 10 customers by total spending.
-
-### Average Order Value
-
-Calculated at the order level:
+## Top Products
 
 ``` text
-AOV = Total Sales / Number of Orders
+Top 10 Products by Sales
 ```
 
-### Order Status
+## Top Customers
 
-Analyzed:
+``` text
+Top 10 Customers by Total Spending
+```
+
+## Average Order Value
+
+``` text
+Average Order Value
+```
+
+## Order Status Analysis
 
 ``` text
 Pending
@@ -470,7 +841,7 @@ Number of Orders
 Order Value
 ```
 
-### Payment Methods
+## Payment Analysis
 
 For each payment method:
 
@@ -480,9 +851,7 @@ Total Payment Amount
 Average Payment Amount
 ```
 
-### Shipment Performance
-
-Calculated:
+## Shipment Performance
 
 ``` text
 Total Shipments
@@ -491,17 +860,23 @@ Minimum Delivery Days
 Maximum Delivery Days
 ```
 
-## Advanced SQL
+------------------------------------------------------------------------
 
-### Running Sales
+# 20. Advanced SQL Analytics
+
+The project also implements SQL window functions.
+
+## Running Sales
 
 Cumulative sales by date using:
 
 ``` sql
-SUM(...) OVER (...)
+SUM(...) OVER (
+    ORDER BY sales_date
+)
 ```
 
-### Month-over-Month Growth
+## Month-over-Month Growth
 
 Calculated:
 
@@ -515,25 +890,27 @@ Growth Percentage
 using:
 
 ``` sql
-LAG(...) OVER (...)
+LAG(...) OVER (
+    ORDER BY year, month
+)
 ```
 
-### Product Ranking
+## Product Ranking
 
-Products were ranked by sales within each category using:
+Products are ranked within each category:
 
 ``` sql
 RANK() OVER (
-    PARTITION BY category
+    PARTITION BY category_id
     ORDER BY sales DESC
 )
 ```
 
-Only the top 3 products from each category were returned.
+The top 3 products from each category are returned.
 
-### Customer Ranking
+## Customer Ranking
 
-Customers were ranked by total spending using:
+Customers are ranked by total spending:
 
 ``` sql
 RANK() OVER (
@@ -541,112 +918,229 @@ RANK() OVER (
 )
 ```
 
-## Final End-to-End Flow
+------------------------------------------------------------------------
+
+# 21. Final Combined Architecture
+
+The complete platform can be summarized as:
 
 ``` text
-Python REST API
-       |
-       v
-orders_json
-       |
-       v
-Amazon S3 - Raw Layer
-       |
-       v
-AWS Glue / PySpark Notebook
-       |
-       +-----------------------+
-       |                       |
-       v                       v
-10 Dimensions              6 Facts
-       |                       |
-       +-----------+-----------+
-                   |
-                   v
-              S3 Parquet
-                   |
-                   v
-           AWS Glue Crawler
-                   |
-                   v
-          Glue Data Catalog
-                   |
-                   v
-             Amazon Athena
-                   |
-                   v
-             SQL Analytics
+                 HISTORICAL SOURCES
+                 12 CSV DATASETS
+                        |
+                        v
+                  Amazon S3 Raw
+                        |
+                        |
+                        +-----------------------+
+                                                |
+                                                v
+                                        AWS Glue / PySpark
+                                                |
+                                                |
+                 API EXTENSION                  |
+                                                |
+ Python Orders API                              |
+        |                                       |
+        v                                       |
+    AWS Lambda                                  |
+        |                                       |
+        v                                       |
+ API Raw JSON in S3 ----------------------------+
+                                                |
+                                                v
+                                      Validation & Cleaning
+                                                |
+                                                v
+                                      Transformations
+                                                |
+                                                v
+                                       Star Schema Model
+                                                |
+                              +-----------------+----------------+
+                              |                                  |
+                              v                                  v
+                       10 Dimensions                         6 Facts
+                              |                                  |
+                              +----------------+-----------------+
+                                               |
+                                               v
+                                      S3 Parquet DWH
+                                               |
+                                               v
+                                      AWS Glue Crawler
+                                               |
+                                               v
+                                      Glue Data Catalog
+                                               |
+                                               v
+                                        Amazon Athena
+                                               |
+                                               v
+                                         SQL Analytics
 ```
 
-## Project Deliverables
+------------------------------------------------------------------------
 
--   Python REST API extraction
--   Raw JSON storage in S3
--   Historical data exploration
--   Data quality validation
--   PySpark data cleaning
--   Nested JSON parsing
--   Dimension tables
--   Fact tables
--   Surrogate keys
--   Star-schema data model
--   Parquet processed layer
--   AWS Glue Crawler
--   Glue Data Catalog
--   Athena database and tables
--   Data validation SQL
--   Business analytics SQL
--   Advanced SQL
--   Window-function analytics
--   Final architecture documentation
+# 22. Why the Two Pipelines Are Important
 
-## Project Status
+The historical pipeline establishes the initial analytical foundation:
 
 ``` text
-[✓] API Extraction
-[✓] Raw Data Storage
-[✓] Data Exploration
-[✓] Data Quality Checks
-[✓] Data Cleaning
-[✓] PySpark Transformations
-[✓] Dimension Modeling
-[✓] Fact Modeling
-[✓] Star Schema
-[✓] Parquet Storage
-[✓] Glue Crawler
-[✓] Glue Data Catalog
-[✓] Athena Database
-[✓] Data Validation
-[✓] Business Analytics
+Historical Data
+    ↓
+Data Warehouse
+    ↓
+Analytics
+```
+
+The API extension adds an ingestion mechanism for future orders:
+
+``` text
+New API Orders
+    ↓
+Lambda
+    ↓
+S3 JSON
+    ↓
+PySpark
+    ↓
+Same Data Warehouse
+    ↓
+Analytics
+```
+
+Together, they form a platform that can start from historical data and
+continue receiving new orders through an API-driven ingestion process.
+
+------------------------------------------------------------------------
+
+# 23. Project Layers
+
+The final architecture can also be viewed as six logical layers:
+
+``` text
+1. SOURCE LAYER
+   Historical CSV + Orders API
+
+2. INGESTION LAYER
+   S3 Raw + AWS Lambda
+
+3. PROCESSING LAYER
+   AWS Glue + PySpark
+
+4. STORAGE / WAREHOUSE LAYER
+   S3 + Parquet + Star Schema
+
+5. CATALOG LAYER
+   AWS Glue Crawler + Glue Data Catalog
+
+6. ANALYTICS LAYER
+   Amazon Athena + SQL
+```
+
+------------------------------------------------------------------------
+
+# 24. Final Project Status
+
+``` text
+[✓] Historical CSV ingestion
+[✓] S3 raw layer
+[✓] Data profiling
+[✓] Data quality checks
+[✓] Data cleaning
+[✓] PySpark transformations
+[✓] Star-schema modeling
+[✓] 10 dimension tables
+[✓] 6 fact tables
+[✓] Parquet warehouse layer
+[✓] API integration
+[✓] AWS Lambda ingestion
+[✓] API JSON raw storage
+[✓] Nested JSON processing with PySpark
+[✓] Incremental API processing design
+[✓] AWS Glue Crawler
+[✓] AWS Glue Data Catalog
+[✓] Athena database
+[✓] Warehouse validation
+[✓] Business analytics
 [✓] Advanced SQL
-[✓] Window Functions
+[✓] Window functions
 
-Project endpoint:
-SQL Analytics
-
-BI Dashboard:
-Not implemented
+[—] BI Dashboard
+      Not implemented
 ```
 
-## Note About Redshift
+------------------------------------------------------------------------
 
-The original assignment architecture referenced Amazon Redshift.
-Redshift was not used in the final implementation because it was not
-available for the AWS account.
+# 25. Important Architecture Note
 
-The final architecture therefore uses:
+The original assignment referenced Amazon Redshift as the final
+warehouse/query layer.
+
+Redshift was not used in the final implementation.
+
+Instead, the project uses an S3-based analytical warehouse with:
 
 ``` text
-S3 Parquet
-   |
+Amazon S3
+    ↓
+Parquet
+    ↓
 AWS Glue Crawler
-   |
+    ↓
 Glue Data Catalog
-   |
+    ↓
 Amazon Athena
-   |
+    ↓
 SQL Analytics
 ```
 
-This preserves the analytical warehouse workflow while using Athena as
-the final query engine over the S3-based dimensional model.
+This means the final implementation remains centered around a
+dimensional warehouse model, while S3 provides the physical storage and
+Athena provides the SQL analytical layer.
+
+------------------------------------------------------------------------
+
+# 26. Project Outcome
+
+The completed project demonstrates an end-to-end AWS data engineering
+workflow:
+
+``` text
+SOURCE
+  ↓
+INGEST
+  ↓
+STORE
+  ↓
+PROCESS
+  ↓
+CLEAN
+  ↓
+MODEL
+  ↓
+CATALOG
+  ↓
+QUERY
+  ↓
+ANALYZE
+```
+
+It combines:
+
+-   Historical batch data
+-   API-based incremental ingestion
+-   Serverless AWS storage
+-   PySpark data engineering
+-   Dimensional modeling
+-   Parquet
+-   AWS Glue
+-   AWS Glue Data Catalog
+-   Amazon Athena
+-   SQL analytics
+-   Advanced window functions
+
+The result is a unified e-commerce analytical data platform capable of
+combining the existing historical dataset with incoming API orders and
+exposing the resulting warehouse data for SQL-based analytics.
